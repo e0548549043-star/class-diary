@@ -1,0 +1,30 @@
+# הגדרות פריסה ל־Render (Blueprint).
+# מסד הנתונים נמצא אצל ספק חיצוני (למשל Neon), ולכן DATABASE_URL מוזן ידנית.
+services:
+  - type: web
+    name: class-diary-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    # מריץ מיגרציות, ממלא נתוני הדגמה אם המסד ריק, ומפעיל את השרת
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # כתובת החיבור מ־Neon - מזינים ידנית
+      - key: JWT_SECRET
+        generateValue: true # Render יוצר מפתח סודי אקראי
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: CORS_ORIGIN
+        sync: false # למשל: http://localhost:5173
+      - key: SEED_PASSWORD
+        sync: false # הסיסמה של חשבונות ההדגמה (לפחות 8 תווים)
+      - key: SCHOOL_TIMEZONE
+        value: Asia/Jerusalem

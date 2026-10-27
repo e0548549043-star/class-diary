@@ -1,0 +1,106 @@
+// סכמת מסד הנתונים של "יומן כיתה"
+// Prisma ORM + PostgreSQL
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+// כתובת החיבור (DATABASE_URL) מוגדרת בקובץ prisma.config.ts
+datasource db {
+  provider = "postgresql"
+}
+
+/// תפקיד המשתמש במערכת
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+/// סטטוס נוכחות של תלמיד בשיעור
+enum AttendanceStatus {
+  PRESENT // נכח
+  LATE // איחר
+  ABSENT // חסר
+}
+
+/// משתמשים: מנהל, מורים ותלמידים
+model User {
+  id           Int     @id @default(autoincrement())
+  /// תעודת זהות - 9 ספרות, ייחודית
+  idNumber     String  @unique @db.VarChar(9)
+  passwordHash String
+  firstName    String  @db.VarChar(50)
+  lastName     String  @db.VarChar(50)
+  role         Role
+  /// כיתה - חובה לתלמיד בלבד
+  classId      Int?
+
+  schoolClass SchoolClass?  @relation(fields: [classId], references: [id], onDelete: Restrict)
+  lessons     Lesson[]      @relation("TeacherLessons")
+  attendance  Attendance[]
+
+  @@index([role])
+  @@index([classId])
+}
+
+/// כיתות בית הספר (קבועות מראש)
+model SchoolClass {
+  id         Int    @id @default(autoincrement())
+  /// שם הכיתה, למשל ט'1
+  name       String @unique @db.VarChar(20)
+  /// שכבה: 7 עד 12
+  gradeLevel Int
+
+  students User[]
+  lessons  Lesson[]
+}
+
+/// רשימת המקצועות (קבועה מראש)
+model Subject {
+  id   Int    @id @default(autoincrement())
+  name String @unique @db.VarChar(50)
+
+  lessons Lesson[]
+}
+
+/// שיעור שהתקיים בכיתה - האובייקט המרכזי במערכת
+model Lesson {
+  id            Int      @id @default(autoincrement())
+  classId       Int
+  teacherId     Int
+  subjectId     Int
+  /// תאריך השיעור (ללא שעה)
+  date          DateTime @db.Date
+  /// מספר השיעור ביום: 1 עד 10
+  lessonNumber  Int
+  /// מה נלמד בשיעור
+  topic         String   @db.VarChar(1000)
+
+  schoolClass SchoolClass  @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher     User         @relation("TeacherLessons", fields: [teacherId], references: [id], onDelete: Restrict)
+  subject     Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  attendance  Attendance[]
+
+  /// בכל כיתה, בכל יום, מספר שיעור מופיע פעם אחת בלבד
+  @@unique([classId, date, lessonNumber])
+  @@index([teacherId])
+  @@index([classId, subjectId])
+  @@index([date])
+}
+
+/// נוכחות של תלמיד בשיעור (שורה לכל תלמיד בכל שיעור)
+model Attendance {
+  id          Int              @id @default(autoincrement())
+  lessonId    Int
+  studentId   Int
+  status      AttendanceStatus
+
+  lesson  Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student User   @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([lessonId, studentId])
+  @@index([studentId])
+}

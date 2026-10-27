@@ -1,0 +1,2054 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "יומן כיתה - API",
+    "version": "1.0.0",
+    "description": "שרת ה־Backend של מערכת **יומן כיתה**: מורים מתעדים שיעורים ונוכחות; המנהל צופה ביומני הכיתות, ברשימות התלמידים והמורים, ומאפס סיסמאות.\n\n**איך מתחברים מתוך Swagger:**\n1. פתחי את `POST /api/auth/login`, לחצי **Try it out**, הזיני ת.ז וסיסמה ולחצי **Execute**.\n2. העתיקי את הערך של `token` מהתשובה.\n3. לחצי על הכפתור **Authorize** (למעלה מימין), הדביקי את ה־Token (בלי המילה Bearer) ולחצי **Authorize**.\n4. מעכשיו כל הקריאות נשלחות עם ה־Token.\n\n**קודי שגיאה:** 400 נתונים לא תקינים · 401 לא מחובר · 403 אין הרשאה · 404 לא נמצא · 409 כפילות · 429 יותר מדי ניסיונות התחברות · 500 שגיאת שרת."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "השרת הנוכחי"
+    }
+  ],
+  "tags": [
+    {
+      "name": "כללי",
+      "description": "בדיקת תקינות השרת"
+    },
+    {
+      "name": "התחברות",
+      "description": "התחברות וזיהוי המשתמש המחובר"
+    },
+    {
+      "name": "כיתות ומקצועות",
+      "description": "נתוני בסיס"
+    },
+    {
+      "name": "שיעורים",
+      "description": "פתיחה, צפייה ועריכה של שיעורים ונוכחות"
+    },
+    {
+      "name": "ניהול משתמשים",
+      "description": "מנהל בלבד"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "ה־Token שמתקבל מ־POST /api/auth/login"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "TOO_MANY_REQUESTS",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "הודעה בעברית שאפשר להציג למשתמש"
+              },
+              "details": {
+                "type": "array",
+                "description": "פירוט שגיאות לפי שדה (רק בשגיאות ולידציה)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "ADMIN",
+          "TEACHER",
+          "STUDENT"
+        ],
+        "description": "ADMIN=מנהל, TEACHER=מורה, STUDENT=תלמיד"
+      },
+      "AttendanceStatus": {
+        "type": "string",
+        "enum": [
+          "PRESENT",
+          "LATE",
+          "ABSENT"
+        ],
+        "description": "PRESENT=נכח, LATE=איחר, ABSENT=חסר"
+      },
+      "ClassRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "PersonRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "idNumber": {
+            "type": "string",
+            "example": "300000017"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "class": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClassRef"
+              }
+            ],
+            "nullable": true,
+            "description": "כיתה - רק לתלמיד"
+          }
+        }
+      },
+      "StudentStats": {
+        "type": "object",
+        "description": "אחוז נוכחות = (נכח + חצי מהאיחורים) ÷ כל השיעורים. null = אין עדיין נתונים.",
+        "properties": {
+          "schoolYearStart": {
+            "type": "string",
+            "format": "date"
+          },
+          "totalLessons": {
+            "type": "integer"
+          },
+          "present": {
+            "type": "integer"
+          },
+          "late": {
+            "type": "integer"
+          },
+          "absent": {
+            "type": "integer"
+          },
+          "attendancePercent": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "UserWithStats": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/User"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "stats": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StudentStats"
+                  }
+                ],
+                "nullable": true,
+                "description": "רק לתלמיד; למורה ולמנהל null"
+              }
+            }
+          }
+        ]
+      },
+      "SchoolClass": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "ט'1"
+          },
+          "gradeLevel": {
+            "type": "integer",
+            "example": 9
+          },
+          "studentCount": {
+            "type": "integer",
+            "example": 24
+          }
+        }
+      },
+      "Subject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "example": "מתמטיקה"
+          }
+        }
+      },
+      "ClassStudent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "idNumber": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        }
+      },
+      "AttendanceRow": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "integer"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttendanceStatus"
+          }
+        }
+      },
+      "Lesson": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "lessonNumber": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "topic": {
+            "type": "string",
+            "description": "מה נלמד"
+          },
+          "class": {
+            "$ref": "#/components/schemas/ClassRef"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/ClassRef"
+          },
+          "teacher": {
+            "$ref": "#/components/schemas/PersonRef"
+          },
+          "attendanceSummary": {
+            "type": "object",
+            "properties": {
+              "present": {
+                "type": "integer"
+              },
+              "late": {
+                "type": "integer"
+              },
+              "absent": {
+                "type": "integer"
+              }
+            }
+          },
+          "attendance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceRow"
+            }
+          }
+        }
+      },
+      "AttendanceInput": {
+        "type": "object",
+        "required": [
+          "studentId",
+          "status"
+        ],
+        "properties": {
+          "studentId": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttendanceStatus"
+          }
+        }
+      },
+      "LessonUpdateInput": {
+        "type": "object",
+        "required": [
+          "subjectId",
+          "lessonNumber",
+          "topic",
+          "attendance"
+        ],
+        "properties": {
+          "subjectId": {
+            "type": "integer"
+          },
+          "lessonNumber": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "topic": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "attendance": {
+            "type": "array",
+            "minItems": 1,
+            "description": "שורה לכל תלמיד - בדיוק פעם אחת לכל תלמיד",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceInput"
+            }
+          }
+        }
+      },
+      "LessonCreateInput": {
+        "allOf": [
+          {
+            "type": "object",
+            "required": [
+              "classId"
+            ],
+            "properties": {
+              "classId": {
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/LessonUpdateInput"
+          }
+        ]
+      },
+      "LessonPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Lesson"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        }
+      },
+      "UserPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserWithStats"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pageSize": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "כללי"
+        ],
+        "summary": "בדיקת בריאות השרת",
+        "description": "ציבורי. בודק שהשרת פועל ושמסד הנתונים מגיב.",
+        "responses": {
+          "200": {
+            "description": "השרת ומסד הנתונים תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "error"
+                      ]
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "error"
+                      ]
+                    },
+                    "time": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "ok",
+                  "database": "ok",
+                  "time": "2026-10-14T18:00:00.000Z"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "אין חיבור למסד הנתונים"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "התחברות",
+        "description": "ציבורי. מחזיר JWT לשימוש בכותרת `Authorization: Bearer <token>`. מוגבל ל־20 ניסיונות ב־15 דקות לכל כתובת.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "idNumber",
+                  "password"
+                ],
+                "properties": {
+                  "idNumber": {
+                    "type": "string",
+                    "example": "100000009"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "Demo1234!"
+                  }
+                }
+              },
+              "example": {
+                "idNumber": "100000009",
+                "password": "Demo1234!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "התחברות הצליחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "tokenType": {
+                      "type": "string",
+                      "example": "Bearer"
+                    },
+                    "expiresIn": {
+                      "type": "string",
+                      "example": "8h"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                },
+                "example": {
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "tokenType": "Bearer",
+                  "expiresIn": "8h",
+                  "user": {
+                    "id": 1,
+                    "idNumber": "100000009",
+                    "firstName": "אסתר",
+                    "lastName": "לוי",
+                    "role": "ADMIN",
+                    "class": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ת.ז או סיסמה שגויים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "תעודת זהות או סיסמה שגויים"
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "יותר מדי ניסיונות",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "TOO_MANY_REQUESTS",
+                    "message": "יותר מדי ניסיונות התחברות. נסי שוב בעוד כמה דקות"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "פרטי המשתמש המחובר",
+        "description": "כל משתמש מחובר.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשתמש המחובר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "example": {
+                  "id": 3,
+                  "idNumber": "200000008",
+                  "firstName": "רבקה",
+                  "lastName": "פרידמן",
+                  "role": "TEACHER",
+                  "class": null
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes": {
+      "get": {
+        "tags": [
+          "כיתות ומקצועות"
+        ],
+        "summary": "רשימת כל הכיתות",
+        "description": "מנהל ומורה. ממוין לפי שכבה ושם.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימת כיתות",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchoolClass"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "name": "ז'1",
+                    "gradeLevel": 7,
+                    "studentCount": 23
+                  },
+                  {
+                    "id": 2,
+                    "name": "ז'2",
+                    "gradeLevel": 7,
+                    "studentCount": 22
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}/students": {
+      "get": {
+        "tags": [
+          "כיתות ומקצועות"
+        ],
+        "summary": "תלמידי כיתה",
+        "description": "מנהל ומורה. ממוין לפי שם משפחה. משמש לטבלת הנוכחות בפתיחת שיעור.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "description": "מזהה הכיתה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימת תלמידים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClassStudent"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 41,
+                    "idNumber": "300000017",
+                    "firstName": "שרה",
+                    "lastName": "אברהמי"
+                  }
+                ]
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "הכיתה לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "הכיתה לא נמצא"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}/lessons": {
+      "get": {
+        "tags": [
+          "שיעורים"
+        ],
+        "summary": "שיעורי כיתה (יומן הכיתה)",
+        "description": "מנהל: כל השיעורים בכיתה. מורה: רק השיעורים שהוא לימד בכיתה. ממוין מהתאריך החדש לישן, ובתוך יום לפי מספר שיעור. אפשר לסנן לפי מקצוע.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "description": "מזהה הכיתה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "subjectId",
+            "in": "query",
+            "description": "סינון לפי מקצוע",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "מספר עמוד (מתחיל ב־1)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "כמה פריטים בעמוד (עד 100)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "עמוד של שיעורים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 812,
+                      "date": "2026-10-14",
+                      "lessonNumber": 2,
+                      "topic": "שברים פשוטים - חיבור וחיסור",
+                      "class": {
+                        "id": 5,
+                        "name": "ט'1"
+                      },
+                      "subject": {
+                        "id": 7,
+                        "name": "מתמטיקה"
+                      },
+                      "teacher": {
+                        "id": 3,
+                        "firstName": "רבקה",
+                        "lastName": "פרידמן"
+                      },
+                      "attendanceSummary": {
+                        "present": 1,
+                        "late": 1,
+                        "absent": 1
+                      },
+                      "attendance": [
+                        {
+                          "studentId": 41,
+                          "firstName": "שרה",
+                          "lastName": "אברהמי",
+                          "status": "PRESENT"
+                        },
+                        {
+                          "studentId": 42,
+                          "firstName": "מרים",
+                          "lastName": "ברגר",
+                          "status": "LATE"
+                        },
+                        {
+                          "studentId": 43,
+                          "firstName": "חנה",
+                          "lastName": "גולד",
+                          "status": "ABSENT"
+                        }
+                      ]
+                    }
+                  ],
+                  "page": 1,
+                  "pageSize": 20,
+                  "total": 1,
+                  "totalPages": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "הכיתה לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "הכיתה לא נמצא"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subjects": {
+      "get": {
+        "tags": [
+          "כיתות ומקצועות"
+        ],
+        "summary": "רשימת מקצועות",
+        "description": "כל משתמש מחובר.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימת מקצועות",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subject"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "name": "אנגלית"
+                  },
+                  {
+                    "id": 7,
+                    "name": "מתמטיקה"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lessons": {
+      "post": {
+        "tags": [
+          "שיעורים"
+        ],
+        "summary": "פתיחת שיעור להיום",
+        "description": "מורה בלבד. התאריך נקבע אוטומטית להיום (שעון ישראל), והמורה נקבע לפי ה־Token.\n\n- `attendance` חייב לכלול כל תלמיד בכיתה בדיוק פעם אחת.\n- אם מספר השיעור כבר קיים היום בכיתה - 409.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonCreateInput"
+              },
+              "example": {
+                "classId": 5,
+                "subjectId": 7,
+                "lessonNumber": 2,
+                "topic": "שברים פשוטים - חיבור וחיסור",
+                "attendance": [
+                  {
+                    "studentId": 41,
+                    "status": "PRESENT"
+                  },
+                  {
+                    "studentId": 42,
+                    "status": "LATE"
+                  },
+                  {
+                    "studentId": 43,
+                    "status": "ABSENT"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "השיעור נוצר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lesson"
+                },
+                "example": {
+                  "id": 812,
+                  "date": "2026-10-14",
+                  "lessonNumber": 2,
+                  "topic": "שברים פשוטים - חיבור וחיסור",
+                  "class": {
+                    "id": 5,
+                    "name": "ט'1"
+                  },
+                  "subject": {
+                    "id": 7,
+                    "name": "מתמטיקה"
+                  },
+                  "teacher": {
+                    "id": 3,
+                    "firstName": "רבקה",
+                    "lastName": "פרידמן"
+                  },
+                  "attendanceSummary": {
+                    "present": 1,
+                    "late": 1,
+                    "absent": 1
+                  },
+                  "attendance": [
+                    {
+                      "studentId": 41,
+                      "firstName": "שרה",
+                      "lastName": "אברהמי",
+                      "status": "PRESENT"
+                    },
+                    {
+                      "studentId": 42,
+                      "firstName": "מרים",
+                      "lastName": "ברגר",
+                      "status": "LATE"
+                    },
+                    {
+                      "studentId": 43,
+                      "firstName": "חנה",
+                      "lastName": "גולד",
+                      "status": "ABSENT"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "רק מורה יכול לפתוח שיעור",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מורה"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "מספר השיעור תפוס",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "שיעור מספר 2 כבר קיים בכיתה הזו בתאריך 2026-10-14"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lessons/{id}": {
+      "get": {
+        "tags": [
+          "שיעורים"
+        ],
+        "summary": "שיעור בודד",
+        "description": "מנהל: כל שיעור. מורה: רק שיעור שהוא לימד (אחרת 403).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השיעור",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השיעור",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lesson"
+                },
+                "example": {
+                  "id": 812,
+                  "date": "2026-10-14",
+                  "lessonNumber": 2,
+                  "topic": "שברים פשוטים - חיבור וחיסור",
+                  "class": {
+                    "id": 5,
+                    "name": "ט'1"
+                  },
+                  "subject": {
+                    "id": 7,
+                    "name": "מתמטיקה"
+                  },
+                  "teacher": {
+                    "id": 3,
+                    "firstName": "רבקה",
+                    "lastName": "פרידמן"
+                  },
+                  "attendanceSummary": {
+                    "present": 1,
+                    "late": 1,
+                    "absent": 1
+                  },
+                  "attendance": [
+                    {
+                      "studentId": 41,
+                      "firstName": "שרה",
+                      "lastName": "אברהמי",
+                      "status": "PRESENT"
+                    },
+                    {
+                      "studentId": 42,
+                      "firstName": "מרים",
+                      "lastName": "ברגר",
+                      "status": "LATE"
+                    },
+                    {
+                      "studentId": 43,
+                      "firstName": "חנה",
+                      "lastName": "גולד",
+                      "status": "ABSENT"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "השיעור לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "השיעור לא נמצא"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "שיעורים"
+        ],
+        "summary": "עריכת שיעור",
+        "description": "מורה בלבד, ורק שיעור שהוא לימד (אחרת 403). אי אפשר לשנות כיתה או תאריך. `attendance` חייב לכלול בדיוק את התלמידים שהיו בשיעור.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השיעור",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LessonUpdateInput"
+              },
+              "example": {
+                "subjectId": 7,
+                "lessonNumber": 2,
+                "topic": "שברים פשוטים - חיבור וחיסור",
+                "attendance": [
+                  {
+                    "studentId": 41,
+                    "status": "PRESENT"
+                  },
+                  {
+                    "studentId": 42,
+                    "status": "LATE"
+                  },
+                  {
+                    "studentId": 43,
+                    "status": "ABSENT"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "השיעור אחרי העדכון",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lesson"
+                },
+                "example": {
+                  "id": 812,
+                  "date": "2026-10-14",
+                  "lessonNumber": 2,
+                  "topic": "שברים פשוטים - חיבור וחיסור",
+                  "class": {
+                    "id": 5,
+                    "name": "ט'1"
+                  },
+                  "subject": {
+                    "id": 7,
+                    "name": "מתמטיקה"
+                  },
+                  "teacher": {
+                    "id": 3,
+                    "firstName": "רבקה",
+                    "lastName": "פרידמן"
+                  },
+                  "attendanceSummary": {
+                    "present": 1,
+                    "late": 1,
+                    "absent": 1
+                  },
+                  "attendance": [
+                    {
+                      "studentId": 41,
+                      "firstName": "שרה",
+                      "lastName": "אברהמי",
+                      "status": "PRESENT"
+                    },
+                    {
+                      "studentId": 42,
+                      "firstName": "מרים",
+                      "lastName": "ברגר",
+                      "status": "LATE"
+                    },
+                    {
+                      "studentId": 43,
+                      "firstName": "חנה",
+                      "lastName": "גולד",
+                      "status": "ABSENT"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "השיעור של מורה אחר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "אפשר לערוך רק שיעורים שלימדת בעצמך"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "השיעור לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "השיעור לא נמצא"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "מספר השיעור תפוס",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "שיעור מספר 3 כבר קיים בכיתה הזו בתאריך 2026-10-14"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "ניהול משתמשים"
+        ],
+        "summary": "רשימת משתמשים",
+        "description": "מנהל בלבד. חיפוש לפי שם או תחילת ת.ז, סינון לפי תפקיד וכיתה. לכל תלמיד מוחזר גם אחוז הנוכחות (`stats`).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "description": "סינון לפי תפקיד",
+            "schema": {
+              "$ref": "#/components/schemas/Role"
+            }
+          },
+          {
+            "name": "classId",
+            "in": "query",
+            "description": "סינון לפי כיתה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "חיפוש לפי שם פרטי, שם משפחה או תחילת ת.ז",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "מספר עמוד (מתחיל ב־1)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "description": "כמה פריטים בעמוד (עד 100)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "עמוד של משתמשים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 41,
+                      "idNumber": "300000017",
+                      "firstName": "שרה",
+                      "lastName": "אברהמי",
+                      "role": "STUDENT",
+                      "class": {
+                        "id": 5,
+                        "name": "ט'1"
+                      },
+                      "stats": {
+                        "schoolYearStart": "2026-09-01",
+                        "totalLessons": 120,
+                        "present": 110,
+                        "late": 4,
+                        "absent": 6,
+                        "attendancePercent": 93.3
+                      }
+                    }
+                  ],
+                  "page": 1,
+                  "pageSize": 20,
+                  "total": 1,
+                  "totalPages": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "tags": [
+          "ניהול משתמשים"
+        ],
+        "summary": "משתמש בודד",
+        "description": "מנהל בלבד. לתלמיד כולל `stats`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשתמש",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשתמש",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithStats"
+                },
+                "example": {
+                  "id": 41,
+                  "idNumber": "300000017",
+                  "firstName": "שרה",
+                  "lastName": "אברהמי",
+                  "role": "STUDENT",
+                  "class": {
+                    "id": 5,
+                    "name": "ט'1"
+                  },
+                  "stats": {
+                    "schoolYearStart": "2026-09-01",
+                    "totalLessons": 120,
+                    "present": 110,
+                    "late": 4,
+                    "absent": 6,
+                    "attendancePercent": 93.3
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשתמש לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "המשתמש לא נמצא"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{id}/password": {
+      "patch": {
+        "tags": [
+          "ניהול משתמשים"
+        ],
+        "summary": "איפוס סיסמה",
+        "description": "מנהל בלבד. המנהל קובע סיסמה חדשה שמחליפה את הקודמת.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשתמש",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 6,
+                    "maxLength": 72
+                  }
+                }
+              },
+              "example": {
+                "password": "NewPass123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "הסיסמה הוחלפה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "message": "הסיסמה אופסה בהצלחה"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "נתונים לא תקינים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "הנתונים שנשלחו אינם תקינים",
+                    "details": [
+                      {
+                        "field": "topic",
+                        "message": "יש לכתוב מה נלמד בשיעור"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "לא מחובר / Token חסר, לא תקין או שפג תוקפו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "נדרשת התחברות: חסר Bearer Token בכותרת Authorization"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "אין הרשאה לפעולה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "פעולה זו מותרת רק ל: מנהל"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "המשתמש לא נמצא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "המשתמש לא נמצא"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
