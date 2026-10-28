@@ -1,32 +1,101 @@
-# React + TypeScript + Vite
+# יומן כיתה – צד הלקוח
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+אפליקציית React ליומן כיתה דיגיטלי: מורות פותחות שיעורים ומסמנות נוכחות, והמנהלת צופה ביומן של כל כיתה ובאחוזי הנוכחות של התלמידות.
 
-Currently, two official plugins are available:
+**האתר החי:** https://class-diary-1.onrender.com
+**השרת (Swagger):** https://<כתובת השרת>.onrender.com/api-docs
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+> בפעם הראשונה האתר יכול לקחת כחצי דקה להיטען, כי השרת החינמי "מתעורר".
 
-## React Compiler
+## חשבונות לבדיקה
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| תפקיד | ת.ז | סיסמה |
+|---|---|---|
+| מנהלת | 100000009 | Demo1234! |
+| מורה | 200000008 | Demo1234! |
 
-## Expanding the Oxlint configuration
+## טכנולוגיות
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+| תחום | טכנולוגיה |
+|---|---|
+| ספרייה | React 19 + TypeScript |
+| כלי בנייה | Vite |
+| ניתוב | React Router |
+| שליפת נתונים | TanStack Query (React Query) |
+| טפסים וולידציה | React Hook Form + Yup |
+| עיצוב | Tailwind CSS |
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## מה כל משתמשת יכולה לעשות
+
+**מנהלת**
+- רשימת כיתות
+- יומן כיתה: כל השיעורים, עם סינון לפי מקצוע ופירוט נוכחות
+- תלמידות הכיתה: אחוז נוכחות לכל תלמידה, עם מיון לפי שם או לפי נוכחות
+- רשימת מורות
+- איפוס סיסמה למורות ולתלמידות
+
+**מורה**
+- רשימת כיתות
+- השיעורים שלי בכיתה, עם סינון לפי מקצוע ופירוט נוכחות
+- פתיחת שיעור להיום: מספר שיעור, מקצוע, מה נלמד, ונוכחות לכל תלמידה
+- עריכת שיעור קיים
+
+## מסכים
+
+| כתובת | מסך | מי |
+|---|---|---|
+| `/login` | התחברות | כולן |
+| `/admin/classes` | רשימת כיתות | מנהלת |
+| `/admin/classes/:classId` | יומן כיתה | מנהלת |
+| `/admin/classes/:classId/students` | תלמידות הכיתה | מנהלת |
+| `/admin/teachers` | מורות | מנהלת |
+| `/teacher/classes` | רשימת כיתות | מורה |
+| `/teacher/classes/:classId` | השיעורים שלי בכיתה | מורה |
+| `/teacher/classes/:classId/lessons/new` | פתיחת שיעור | מורה |
+| `/teacher/lessons/:lessonId` | עריכת שיעור | מורה |
+
+כל נתיב מוגן לפי תפקיד: בלי התחברות מועברים ל־`/login`, ומשתמשת בתפקיד אחר מועברת לדף הבית שלה.
+
+## מבנה התיקיות
+
+```
+src/
+├── api/          # כל הקריאות לשרת (request משותף + פונקציה לכל Endpoint)
+├── components/   # קומפוננטות משותפות (טבלאות, טפסים, חלונות, Layout)
+├── context/      # UserContext – המשתמשת המחוברת
+├── pages/        # דף לכל מסך
+├── routs/        # הגדרת הנתיבים והגנה לפי תפקיד
+├── typs/         # טיפוסי TypeScript
+└── utils/        # קבועים ופונקציות עזר
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## הרצה במחשב
+
+1. להריץ את השרת (הוראות ב־README של השרת).
+2. בתיקייה הזו, ליצור קובץ `.env`:
+   ```
+   VITE_API_URL=http://localhost:3000/api
+   ```
+3. להתקין ולהריץ:
+   ```bash
+   npm install
+   npm run dev
+   ```
+4. לפתוח http://localhost:5173
+
+## פקודות
+
+| פקודה | מה היא עושה |
+|---|---|
+| `npm run dev` | הרצה במצב פיתוח |
+| `npm run build` | בנייה לפריסה (לתיקייה `dist`) |
+| `npm run preview` | הצגה מקומית של הגרסה הבנויה |
+
+## פריסה
+
+האתר מפורסם ב־Render כ־Static Site:
+- Root Directory: `client`
+- Build Command: `npm install && npm run build`
+- Publish Directory: `dist`
+- משתנה סביבה: `VITE_API_URL` = כתובת השרת עם `/api`
+- Rewrite: `/*` ← `/index.html` (כדי שרענון בדף פנימי יעבוד)
